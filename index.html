@@ -565,8 +565,9 @@
         return reviewQueue[0].word;
     }
 
-    function getTargetAudioText() {
-      if (reviewQueue.length === 0) return '';
+    // 取得所有的朗讀目標，回傳文字陣列以支援 0.2 秒間隔連續朗讀
+    function getTargetAudioTexts() {
+      if (reviewQueue.length === 0) return [];
       const lines = getNormalizedLines(reviewQueue[0].details);
       const isTag = (line) => line.trim().startsWith('【');
       
@@ -574,7 +575,7 @@
       let inHighlightSection = false;
       let hasAnyTag = lines.some(isTag);
 
-      // 收集所有被高亮的內容（包含搭配詞、語塊、例句），用於自動連續朗讀
+      // 收集所有被高亮的內容（包含搭配詞、語塊、例句）
       lines.forEach((line, idx) => {
           if (isTag(line)) {
               if (line.includes('【搭配詞】') || line.includes('【語塊】') || line.includes('【例句】')) {
@@ -587,13 +588,12 @@
           }
       });
 
-      // 不同的語塊或例句之間用句號分隔，讓語音引擎在連續朗讀時有自然的換氣停頓
-      if (textToRead.length > 0) return textToRead.join('. ');
+      if (textToRead.length > 0) return textToRead;
 
       if (!hasAnyTag && lines.length > 0) {
-        return lines[0];
+        return [lines[0]];
       }
-      return '';
+      return [];
     }
 
     // 發音底層：徹底過濾中文
@@ -613,10 +613,11 @@
             return;
         }
 
-        const utterance = new SpeechSynthesisUtterance(englishOnlyText);
-        utterance.lang = 'en-US';
-        utterance.rate = 0.8; 
-        utterance.pitch = 1.0;
+        // 把發音實例存入全域變數避免被回收
+        currentUtterance = new SpeechSynthesisUtterance(englishOnlyText);
+        currentUtterance.lang = 'en-US';
+        currentUtterance.rate = 0.8; 
+        currentUtterance.pitch = 1.0;
 
         let voices = window.speechSynthesis.getVoices();
         if (voices.length > 0) {
@@ -632,16 +633,33 @@
               voices[0];
 
             if (bestVoice) {
-              utterance.voice = bestVoice;
+              currentUtterance.voice = bestVoice;
             }
         }
 
         if (onEndCallback) {
-            utterance.onend = onEndCallback;
-            utterance.onerror = onEndCallback; 
+            currentUtterance.onend = onEndCallback;
+            currentUtterance.onerror = onEndCallback; 
         }
 
-        window.speechSynthesis.speak(utterance);
+        window.speechSynthesis.speak(currentUtterance);
+    }
+    
+    // 依序朗讀陣列中的文字，每個語句間隔指定時間
+    function playTextArraySequentially(texts, interval) {
+      let index = 0;
+      function playNext() {
+          if (!isFlipped || index >= texts.length) return;
+          speakText(texts[index], () => {
+              index++;
+              if (index < texts.length) {
+                  sequenceTimeout = setTimeout(() => {
+                      if (isFlipped) playNext();
+                  }, interval);
+              }
+          });
+      }
+      playNext();
     }
 
     function playWordAudio(e) {
@@ -657,10 +675,10 @@
       if (e) e.stopPropagation();
       window.speechSynthesis.cancel();
       clearTimeout(sequenceTimeout);
-      const targetText = getTargetAudioText();
+      const targets = getTargetAudioTexts();
       
-      if (targetText) {
-          speakText(targetText); // 朗讀收集到的所有語塊
+      if (targets.length > 0) {
+          playTextArraySequentially(targets, 200); // 間隔0.2秒朗讀所有語塊
       } else {
           const word = getWordText();
           if (!hasChinese(word)) speakText(word);
@@ -672,19 +690,19 @@
       clearTimeout(sequenceTimeout);
 
       const word = getWordText();
-      const targetText = getTargetAudioText();
+      const targets = getTargetAudioTexts();
 
       if (hasChinese(word)) {
-          if (targetText && isFlipped) {
+          if (targets.length > 0 && isFlipped) {
               sequenceTimeout = setTimeout(() => {
-                  if (isFlipped) speakText(targetText);
+                  if (isFlipped) playTextArraySequentially(targets, 200);
               }, 200);
           }
       } else {
           speakText(word, () => {
-              if (targetText && isFlipped) {
+              if (targets.length > 0 && isFlipped) {
                   sequenceTimeout = setTimeout(() => {
-                      if (isFlipped) speakText(targetText);
+                      if (isFlipped) playTextArraySequentially(targets, 200);
                   }, 200); 
               }
           });
@@ -708,7 +726,7 @@
       if (e.key === 'Enter') {
         e.preventDefault();
         if (!isFlipped) playWordAudio();
-        else playTargetAudio(); // 背面按Enter會連續朗讀所有語塊
+        else playTargetAudio(); // 背面按Enter會間隔0.2秒連續朗讀所有語塊
       } else if (e.code === 'Space' || e.key === ' ' || e.key === '0') {
         e.preventDefault();
         if (!isFlipped) toggleFlip();
