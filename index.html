@@ -128,13 +128,13 @@
             <!-- 背面內容 -->
             <div id="card-back" class="w-full flex flex-col text-left hidden-view">
               <img id="back-img" src="" alt="card image" class="w-full h-24 md:h-32 object-cover rounded-xl mb-3 shadow-sm bg-gray-100" />
-              <div class="flex items-center justify-between border-b pb-2 mb-1">
+              <div class="flex items-center justify-between border-b pb-2 mb-2">
                 <h3 id="back-word" class="text-xl md:text-2xl font-bold text-gray-800 break-words"></h3>
                 <button id="back-speaker-btn" onclick="playWordAudio(event)" class="p-2 md:p-2.5 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-colors shadow-sm active:scale-95" title="朗讀單字">
                   <i data-lucide="volume-2" class="w-5 h-5 md:w-6 md:h-6"></i>
                 </button>
               </div>
-              <div id="back-details" class="space-y-1.5 text-sm md:text-base text-gray-700 max-h-[40vh] md:max-h-none overflow-y-auto pr-1"></div>
+              <div id="back-details" class="space-y-1.5 text-sm md:text-base text-gray-700 max-h-[40vh] md:max-h-none overflow-y-auto pr-1 pb-2"></div>
             </div>
             
           </div>
@@ -280,26 +280,32 @@
       }
     }
 
-    // 正規化詳細內容：強制把「【例句】」與後面的英文句子分開成獨立行
+    // 正規化詳細內容：智慧拆分多個語塊，讓它們獨立成行
     function getNormalizedLines(details) {
-      let normalizedLines = [];
+      // 1. 先根據原本的換行與 <br> 分段
       const rawLines = details
         .split(/<br\s*\/?>|\n/i)
         .map(l => l.replace(/^\/\//g, '').trim())
         .filter(l => l);
-        
+
+      let normalizedLines = [];
       rawLines.forEach(l => {
-         if (l.includes('【例句】')) {
-            const idx = l.indexOf('【例句】');
-            const before = l.substring(0, idx).trim();
-            const after = l.substring(idx + 4).trim(); // 4 是 '【例句】' 的長度
-            
-            if (before) normalizedLines.push(before);
-            normalizedLines.push('【例句】');
-            if (after) normalizedLines.push(after);
-         } else {
-            normalizedLines.push(l);
-         }
+         // 2. 利用正則表達式把【】標籤強制斷開成獨立行
+         const parts = l.replace(/(【(?:例句|搭配詞|語塊|詞性變化|同義詞|反義詞)】)/g, '|||$1|||').split('|||');
+         parts.forEach(part => {
+             let p = part.trim();
+             if (!p) return;
+             
+             // 3. 如果不是標籤行，遇到分號則強制拆分成獨立語塊
+             if (!/^【.*】$/.test(p)) {
+                 // 支援全形（；）與半形（;）的拆分
+                 p.split(/；|;/).forEach(subChunk => {
+                     if (subChunk.trim()) normalizedLines.push(subChunk.trim());
+                 });
+             } else {
+                 normalizedLines.push(p);
+             }
+         });
       });
       return normalizedLines;
     }
@@ -362,7 +368,7 @@
       }
     }
 
-    // 更新畫面視圖 (Upload, Study, Complete)
+    // 更新畫面視圖
     function updateView() {
       const vUpload = document.getElementById('view-upload');
       const vStudy = document.getElementById('view-study');
@@ -372,7 +378,6 @@
       vStudy.classList.add('hidden-view');
       vComplete.classList.add('hidden-view');
       
-      // 取消卡片背面狀態
       vStudy.classList.remove('flex');
       vComplete.classList.remove('flex');
 
@@ -382,7 +387,6 @@
         vComplete.classList.remove('hidden-view');
         vComplete.classList.add('flex');
         
-        // 更新結算數據
         document.getElementById('final-again').textContent = `${stats.again} 次`;
         document.getElementById('final-hard').textContent = `${stats.hard} 次`;
         document.getElementById('final-good').textContent = `${stats.good} 次`;
@@ -403,7 +407,6 @@
       const remain = reviewQueue.length;
       const progressPercentage = ((total - remain) / total) * 100;
 
-      // 更新頂部進度與統計
       document.getElementById('progress-text').textContent = `剩下卡片數量 / 卡片總數：${remain} / ${total}`;
       document.getElementById('progress-bar').style.width = `${progressPercentage}%`;
       document.getElementById('stat-again').textContent = `Again: ${stats.again}`;
@@ -411,7 +414,6 @@
       document.getElementById('stat-good').textContent = `Good: ${stats.good}`;
       document.getElementById('stat-easy').textContent = `Easy: ${stats.easy}`;
 
-      // 取得 UI 元件
       const cardContainer = document.getElementById('card-container');
       const cFront = document.getElementById('card-front');
       const cBack = document.getElementById('card-back');
@@ -419,7 +421,7 @@
       const btnShow = document.getElementById('btn-show-answer');
       const btnSRS = document.getElementById('srs-buttons');
 
-      // 判斷正面是否有中文，來決定是否顯示主要單字區的發音按鈕
+      // 判斷正面是否有中文
       const frontSpeakerBtn = document.getElementById('front-speaker-btn');
       const backSpeakerBtn = document.getElementById('back-speaker-btn');
       if (hasChinese(currentCard.word)) {
@@ -431,18 +433,16 @@
       }
 
       if (!isFlipped) {
-        // 顯示正面
         cFront.classList.remove('hidden-view');
         fHint.classList.remove('hidden-view');
         btnShow.classList.remove('hidden-view');
         
         cBack.classList.add('hidden-view');
         btnSRS.classList.add('hidden-view');
-        cardContainer.classList.add('cursor-pointer'); // 讓滑鼠變成手指形狀
+        cardContainer.classList.add('cursor-pointer');
         
         document.getElementById('front-word').textContent = currentCard.word;
       } else {
-        // 顯示背面
         cFront.classList.add('hidden-view');
         fHint.classList.add('hidden-view');
         btnShow.classList.add('hidden-view');
@@ -451,73 +451,84 @@
         btnSRS.classList.remove('hidden-view');
         cardContainer.classList.remove('cursor-pointer');
 
-        // 圖片與文字
         const imgWord = encodeURIComponent(currentCard.word.replace(/\s+/g, ','));
         document.getElementById('back-img').src = `https://loremflickr.com/400/200/${imgWord}/all`;
         document.getElementById('back-word').textContent = currentCard.word;
 
-        // 處理詳細內容分行 (導入正規化函數)
         const backLines = getNormalizedLines(currentCard.details);
+        const isTag = (line) => line.trim().startsWith('【');
 
-        const exIndex = backLines.findIndex(l => l.includes('【例句】'));
+        let inHighlightSection = false;
+        let hasAnyTag = backLines.some(isTag);
+
         const detailsContainer = document.getElementById('back-details');
         detailsContainer.innerHTML = '';
 
         backLines.forEach((line, idx) => {
-          const isExampleSentence = (idx === exIndex + 1);
-          // 支援沒有【例句】的簡單單字卡：若找不到例句，將第一行視為朗讀目標
-          const isSimpleTranslation = (exIndex === -1 && idx === 0);
-          const shouldHighlight = isExampleSentence || isSimpleTranslation;
+          // 動態偵測是否為需要高亮與發音的目標區段 (搭配詞、語塊、例句皆會高亮)
+          if (isTag(line)) {
+            if (line.includes('【搭配詞】') || line.includes('【語塊】') || line.includes('【例句】')) {
+              inHighlightSection = true;
+            } else {
+              inHighlightSection = false;
+            }
+          }
+          
+          const isSimpleTranslation = (!hasAnyTag && idx === 0);
+          const shouldHighlight = (!isTag(line) && inHighlightSection) || isSimpleTranslation;
 
           const div = document.createElement('div');
           
-          div.className = `leading-snug ${line.startsWith('【') ? 'font-bold text-gray-900 mt-2 text-sm' : 'text-sm md:text-base'}`;
+          div.className = `leading-snug ${isTag(line) ? 'font-bold text-gray-900 mt-4 mb-2 text-sm md:text-base border-b pb-1' : 'text-sm md:text-base'}`;
+          
           if (shouldHighlight) {
-            div.className += ' bg-blue-50/50 p-2 md:p-3 rounded-lg border border-blue-100/50 flex items-start gap-2';
+            div.className += ' bg-blue-50/50 p-3 rounded-xl border border-blue-100/50 flex items-center gap-3 mb-2 shadow-sm';
+          } else if (!isTag(line)) {
+            div.className += ' mb-2 px-1 text-gray-600';
           }
 
           const span = document.createElement('span');
-          span.className = `flex-grow ${shouldHighlight ? 'text-blue-900' : ''}`;
+          span.className = `flex-grow ${shouldHighlight ? 'text-blue-900 font-medium' : ''}`;
           span.textContent = line;
           div.appendChild(span);
 
           if (shouldHighlight) {
+            // 為每一行獨立的語塊生成專屬的朗讀喇叭圖示
             const btn = document.createElement('button');
-            btn.className = 'p-1.5 md:p-2 -mt-0.5 bg-white text-blue-600 rounded-full hover:bg-blue-100 transition-colors shadow-sm flex-shrink-0 active:scale-95';
-            btn.title = '朗讀內容';
+            btn.className = 'p-2 bg-white text-blue-600 rounded-full hover:bg-blue-100 transition-colors shadow-sm flex-shrink-0 active:scale-95';
+            btn.title = '獨立朗讀此段落';
             btn.onclick = function(e) {
               e.stopPropagation();
-              playExampleAudio();
+              window.speechSynthesis.cancel();
+              clearTimeout(sequenceTimeout);
+              speakText(line); // 直接朗讀這一行
             };
-            btn.innerHTML = `<i data-lucide="volume-2" class="w-[18px] h-[18px] md:w-5 md:h-5"></i>`;
+            btn.innerHTML = `<i data-lucide="volume-2" class="w-5 h-5"></i>`;
             div.appendChild(btn);
           }
           detailsContainer.appendChild(div);
         });
 
-        lucide.createIcons(); // 重新渲染新插入的圖示
+        lucide.createIcons();
       }
       
-      preloadImages(); // 背景載入後續圖片
+      preloadImages();
     }
 
-    // 處理卡片本體的點擊
     function handleCardClick(e) {
       if (!isFlipped) toggleFlip(e);
     }
 
-    // 翻面邏輯
     function toggleFlip(e) {
       if (e) e.stopPropagation();
       if (!isFlipped) {
         isFlipped = true;
-        initSpeechSynthesis(); // 確保手機上語音已喚醒
+        initSpeechSynthesis();
         renderStudyCard();
-        playBackSequence(); // 翻面後：先朗讀單字(若無中文)，等待後朗讀例句
+        playBackSequence();
       }
     }
 
-    // SRS 點擊處理
     function handleSRS(action, e) {
       if (e) e.stopPropagation();
       if (reviewQueue.length === 0) return;
@@ -531,70 +542,78 @@
         const insertIndex = Math.min(3, newQueue.length);
         newQueue.splice(insertIndex, 0, cardToProcess);
       } else if (action === 'hard') {
-        // Hard 現在將卡片插入到剩餘卡片的第 8 個位置 (index 7)
         const insertIndex = Math.min(7, newQueue.length);
         newQueue.splice(insertIndex, 0, cardToProcess);
       } else if (action === 'good') {
         newQueue.push(cardToProcess);
-      } // easy: 直接移除，不做任何事
+      } // easy: 直接移除
 
       reviewQueue = newQueue;
       isFlipped = false;
-      saveProgress(); // 每次操作後自動儲存進度
+      saveProgress();
       
       if (reviewQueue.length === 0) {
-        updateView(); // 顯示結算畫面
+        updateView();
       } else {
         renderStudyCard();
-        // 小延遲發音下一張單字，避免過度緊湊
         setTimeout(() => playWordAudio(), 100); 
       }
     }
 
-    // 取得單字文字 (Col A)
     function getWordText() {
         if (reviewQueue.length === 0) return '';
         return reviewQueue[0].word;
     }
 
-    // 取得例句或翻譯文字 (Col B)
-    function getExampleText() {
+    function getTargetAudioText() {
       if (reviewQueue.length === 0) return '';
       const lines = getNormalizedLines(reviewQueue[0].details);
-      const exIndex = lines.findIndex(l => l.includes('【例句】'));
-      if (exIndex !== -1 && exIndex + 1 < lines.length) {
-        const exLine = lines[exIndex + 1];
-        // 去除例句中括號內的翻譯，專注朗讀括號前的外文 (或是中外夾雜的句子)
-        const match = exLine.match(/^(.*?)\s*[（(]/);
-        return match ? match[1] : exLine;
-      }
-      // 支援純單字解釋格式：如果沒有例句標籤，抓取第一行
-      if (lines.length > 0) {
-        const match = lines[0].match(/^(.*?)\s*[（(]/);
-        return match ? match[1] : lines[0];
+      const isTag = (line) => line.trim().startsWith('【');
+      
+      let textToRead = [];
+      let inHighlightSection = false;
+      let hasAnyTag = lines.some(isTag);
+
+      // 收集所有被高亮的內容（包含搭配詞、語塊、例句），用於自動連續朗讀
+      lines.forEach((line, idx) => {
+          if (isTag(line)) {
+              if (line.includes('【搭配詞】') || line.includes('【語塊】') || line.includes('【例句】')) {
+                  inHighlightSection = true;
+              } else {
+                  inHighlightSection = false;
+              }
+          } else if (inHighlightSection) {
+              textToRead.push(line);
+          }
+      });
+
+      // 不同的語塊或例句之間用句號分隔，讓語音引擎在連續朗讀時有自然的換氣停頓
+      if (textToRead.length > 0) return textToRead.join('. ');
+
+      if (!hasAnyTag && lines.length > 0) {
+        return lines[0];
       }
       return '';
     }
 
-    // 底層朗讀共用函數 (已取消中文發音功能，僅保留英文)
+    // 發音底層：徹底過濾中文
     function speakText(text, onEndCallback) {
         if (!text) {
             if (onEndCallback) onEndCallback();
             return;
         }
 
-        // 徹底取消中文發音：過濾掉所有的中文字元與常見的全形標點符號
-        const englishOnlyText = text.replace(/[\u4e00-\u9fa5]/g, '').replace(/[，。？！（）「」：；、]/g, '').trim();
+        const englishOnlyText = text.replace(/[\u4e00-\u9fa5]/g, ' ')
+                                    .replace(/[，。？！（）「」：；、()]/g, ' ')
+                                    .replace(/\s+/g, ' ')
+                                    .trim();
 
-        // 如果過濾掉中文後，字串變成空的，或是裡面沒有任何英文字母或數字，則保持靜音直接跳過
         if (!englishOnlyText || !/[a-zA-Z0-9]/.test(englishOnlyText)) {
             if (onEndCallback) onEndCallback();
             return;
         }
 
         const utterance = new SpeechSynthesisUtterance(englishOnlyText);
-        
-        // 強制使用英文語系發音
         utterance.lang = 'en-US';
         utterance.rate = 0.8; 
         utterance.pitch = 1.0;
@@ -619,67 +638,59 @@
 
         if (onEndCallback) {
             utterance.onend = onEndCallback;
-            utterance.onerror = onEndCallback; // 處理被中斷或阻擋的例外情況
+            utterance.onerror = onEndCallback; 
         }
 
         window.speechSynthesis.speak(utterance);
     }
 
-    // 點擊正面/背面標題喇叭時：單純朗讀單字
     function playWordAudio(e) {
       if (e) e.stopPropagation();
       window.speechSynthesis.cancel();
       clearTimeout(sequenceTimeout);
       const word = getWordText();
-      // 如果含有中文，強制不發音
       if (hasChinese(word)) return;
       speakText(word);
     }
 
-    // 點擊背面例句喇叭時：單純朗讀例句 (若無例句則朗讀單字備用)
-    function playExampleAudio(e) {
+    function playTargetAudio(e) {
       if (e) e.stopPropagation();
       window.speechSynthesis.cancel();
       clearTimeout(sequenceTimeout);
-      const example = getExampleText();
+      const targetText = getTargetAudioText();
       
-      if (example) {
-          speakText(example);
+      if (targetText) {
+          speakText(targetText); // 朗讀收集到的所有語塊
       } else {
-          // 如果沒有例句當備用，也要檢查原本的單字是不是中文
           const word = getWordText();
           if (!hasChinese(word)) speakText(word);
       }
     }
 
-    // 翻面後的連貫動作：先讀單字(若無中文)，等 0.2 秒後再讀例句
     function playBackSequence() {
       window.speechSynthesis.cancel();
       clearTimeout(sequenceTimeout);
 
       const word = getWordText();
-      const example = getExampleText();
+      const targetText = getTargetAudioText();
 
       if (hasChinese(word)) {
-          // 正面有中文，直接唸背面的英文語意 (加入微小延遲讓翻面動畫順暢)
-          if (example && isFlipped) {
+          if (targetText && isFlipped) {
               sequenceTimeout = setTimeout(() => {
-                  if (isFlipped) speakText(example);
+                  if (isFlipped) speakText(targetText);
               }, 200);
           }
       } else {
-          // 正面無中文，依序唸單字與例句
           speakText(word, () => {
-              if (example && isFlipped) {
+              if (targetText && isFlipped) {
                   sequenceTimeout = setTimeout(() => {
-                      if (isFlipped) speakText(example);
-                  }, 200); // 0.2秒延遲
+                      if (isFlipped) speakText(targetText);
+                  }, 200); 
               }
           });
       }
     }
 
-    // 背景預載後續 3 張卡片的圖片
     function preloadImages() {
       if (reviewQueue.length > 1) {
         const cardsToPreload = reviewQueue.slice(1, 4);
@@ -691,15 +702,13 @@
       }
     }
 
-    // 監聽鍵盤快捷鍵
     window.addEventListener('keydown', function(e) {
       if (reviewQueue.length === 0 || csvData.length === 0 || showInfo) return;
 
       if (e.key === 'Enter') {
         e.preventDefault();
-        // 正面讀單字，背面若按Enter則讀例句
         if (!isFlipped) playWordAudio();
-        else playExampleAudio();
+        else playTargetAudio(); // 背面按Enter會連續朗讀所有語塊
       } else if (e.code === 'Space' || e.key === ' ' || e.key === '0') {
         e.preventDefault();
         if (!isFlipped) toggleFlip();
@@ -711,7 +720,6 @@
       }
     });
 
-    // 頁面載入時檢查是否有儲存的進度
     window.addEventListener('DOMContentLoaded', () => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -721,7 +729,7 @@
             csvData = state.csvData;
             reviewQueue = state.reviewQueue || [];
             stats = state.stats || { again: 0, hard: 0, good: 0, easy: 0 };
-            isFlipped = false; // 重新載入時一律顯示正面
+            isFlipped = false; 
             updateView();
           }
         } catch (e) {
